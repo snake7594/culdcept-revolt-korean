@@ -1,0 +1,17 @@
+# never commit game data
+*.DAT
+*.dat
+*.3ds
+*.cia
+*.cci
+*.cxi
+*.app
+code.bin
+*.bin
+# delta patch is a Release asset, not repo content
+*.bsdiff4
+*.xdelta
+# build / python
+__pycache__/
+*.pyc
+out/
