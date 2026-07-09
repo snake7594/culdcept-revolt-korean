@@ -1,85 +1,82 @@
-# CULDCEPT.DAT format (Culdcept Revolt, 3DS)
+# CULDCEPT.DAT 포맷 (컬드셉트 리볼트, 3DS)
 
-Everything below was reverse-engineered from the game; no official docs.
-Offsets/handler addresses refer to the decompressed ARM executable (ExeFS `.code`,
-which is BLZ-compressed on disk).
+아래는 전부 게임에서 직접 리버스 엔지니어링한 내용입니다(공식 문서 없음).
+오프셋·핸들러 주소는 압축 해제된 ARM 실행 파일(ExeFS `.code`, 디스크에서는 BLZ 압축됨)
+기준입니다.
 
-## 1. Archive container
-
-```
-offset 0:  record table -- N entries of 8 bytes each:
-             u32 LE  offset      (into the file)
-             u32 LE  size        (bytes of this entry)
-           N = table[0].offset / 8   (data starts right after the table)
-entry i:   DAT[offset : offset+size]
-```
-
-Entry byte 0 is the codec type. Observed types: `0x08`, `0x0c`, `0x0d`, `0x8d`
-(compressed); `0x00` (raw / nested container using 24-bit big-endian offset
-tables); `0x05` (raw CWAV audio).
-
-To resize an entry, append the new bytes at the end of the file and rewrite that
-one 8-byte record — every other entry keeps its offset.
-
-## 2. Codec dispatch
-
-A single dispatcher (guest `0x27f3f4`) reads the type byte and selects a handler
-from a table (`0x39bb58`, indexed `type & 0x3f`) plus a post-processor
-(`0x39bb90`, indexed `type >> 6`):
-
-| type | handler | scheme |
-|------|---------|--------|
-| 0x08 | 0x274b90 | canonical Huffman + LZ (window 0x0d) |
-| 0x0c | 0x274b88 | canonical Huffman + LZ (window 0x10) |
-| 0x0d | 0x275080 | LZMA-family range coder |
-| 0x8d | 0x275080 | same range coder, different post-processor |
-
-## 3. Type 0x08 / 0x0c — Huffman + LZ (implemented in `culdcept/huffman.py`)
+## 1. 아카이브 컨테이너
 
 ```
-entry = [type u8] [varint size] [bitstream]
+오프셋 0:  레코드 테이블 -- 8바이트 엔트리 N개:
+             u32 LE  offset      (파일 내 위치)
+             u32 LE  size        (이 엔트리의 바이트 수)
+           N = table[0].offset / 8   (데이터는 테이블 바로 뒤에서 시작)
+엔트리 i:  DAT[offset : offset+size]
 ```
 
-- **size** is a continuation-bit **varint** (handler `0x2747f8`), NOT `size>>8`.
-  Note the archive record’s size field and this varint are read from overlapping
-  bytes; the varint is the true decompressed length.
-- **Bit reader** (`0x275020/0x275028`): MSB-first over a 32-bit accumulator; refill
-  reads a little-endian `u16` and byte-reverses it into the top of the accumulator.
-  After the varint, if `pos` is odd one byte is pre-loaded, then `consume(16)` primes.
-  Net effect: a plain MSB-first bit stream over the entry bytes from `pos`.
-- **Blocks** repeat until `size` bytes are produced:
-  - `r8 = getbits(16)` — number of symbols in the block.
-  - **litlen** table (`0x274d18`): a 19-symbol code-length (CL) table read by
-    `read_lengths_direct(19, 5, special_pos=3)`, then `count = getbits(9)` code
-    lengths RLE-coded through CL (`s>2 → len s-2`, `s==0 → 0`, `s==1 → 3+getbits(4)`
-    zeros, `s==2 → 0x14+getbits(9)` zeros).
-  - **dist** table: `read_lengths_direct(window+1, (window+1-10)&5, -1)`.
-  - `r8` symbols: `sym<0x100` literal; else `length=sym-0xFD`, distance code
-    `dsym → dd = (dsym==0?1:(1<<(dsym-1))+1+getbits(dsym-1))`, copy match.
-- **`read_lengths_direct(nsym,nbits,special)`**: `count=getbits(nbits)`; if 0 →
-  single symbol `= getbits(nbits)`. Else per length: top 3 bits `t`; `t<7 → len t`
-  (consume 3) else `len = 7 + clz32(~(acc<<3))` (consume len-3). At `i==special`,
-  `r=getbits(2)`; if `r`, skip `r` zeros.
+엔트리 첫 바이트가 코덱 타입입니다. 관측된 타입: `0x08`, `0x0c`, `0x0d`, `0x8d`(압축);
+`0x00`(원시/중첩 컨테이너, 24비트 빅엔디언 오프셋 테이블 사용); `0x05`(원시 CWAV 오디오).
 
-A minimal valid encoder emits, per block: `r8`, a degenerate CL table (single
-symbol 10 → 0 bits), `count=256` (yielding a 256-entry all-length-8 litlen table,
-so literal byte B is the raw 8-bit value B), a degenerate dist table, then the raw
-literal bytes. See `compress()`.
+엔트리 크기를 바꾸려면 새 바이트를 **파일 끝에 추가**하고 해당 8바이트 레코드만 갱신하면
+됩니다 — 다른 엔트리의 오프셋은 그대로 유지됩니다.
 
-## 4. Bitmap font (decompressed resource, `culdcept/font.py`)
+## 2. 코덱 디스패치
+
+단일 디스패처(guest `0x27f3f4`)가 타입 바이트를 읽어 핸들러 테이블(`0x39bb58`,
+`type & 0x3f`로 인덱싱) + 후처리기(`0x39bb90`, `type >> 6`로 인덱싱)를 선택합니다:
+
+| 타입 | 핸들러 | 방식 |
+|------|--------|------|
+| 0x08 | 0x274b90 | canonical Huffman + LZ (윈도우 0x0d) |
+| 0x0c | 0x274b88 | canonical Huffman + LZ (윈도우 0x10) |
+| 0x0d | 0x275080 | LZMA 계열 레인지 코더 |
+| 0x8d | 0x275080 | 동일 레인지 코더, 후처리기만 다름 |
+
+## 3. 타입 0x08 / 0x0c — Huffman + LZ (`culdcept/huffman.py`에 구현)
 
 ```
-offset 0x30: CMAP -- u16 LE character codes; glyph_index i -> CMAP[i].
-             ASCII 0x20-0x7e, half-width 0xa1-0xdf, Shift-JIS 0x8140+, gaiji 0xf9xx.
-size section header (8 bytes): 14 00 | bpg(u16) | b4 | w | h | bpp
+entry = [type u8] [varint size] [비트스트림]
 ```
 
-For the 4bpp text sizes (`bpp==4`, `b4==0xCE`), glyph bitmaps start at
-`section + 0xCE`; glyph `i` is a fixed `w×h` **A4** (4-bit alpha, MSB nibble first)
-cell of `bpg = ceil(w/2)*h` bytes at `section + 0xCE + i*bpg`.
-Sizes shipped: **10 px** (bpg 50), **12 px** (bpg 72), **14 px** (bpg 98).
-A 12×12 16bpp "outline" section (`b4==0x10`, `bpg 288`) also exists; it holds only
-~160 glyphs (no kanji) and is not used for body text.
+- **size**는 연속 비트(continuation-bit) **varint**(핸들러 `0x2747f8`)이며, `size>>8`이
+  **아닙니다**. 아카이브 레코드의 size 필드와 이 varint는 겹치는 바이트에서 읽히지만,
+  실제 압축 해제 길이는 varint입니다.
+- **비트 리더**(`0x275020/0x275028`): 32비트 누산기에 대해 MSB 우선. 리필은 little-endian
+  `u16`을 읽어 바이트를 뒤집어 누산기 상위에 넣습니다. varint 뒤 `pos`가 홀수면 1바이트를
+  미리 로드하고, `consume(16)`으로 프라이밍. 결과적으로 `pos`부터의 엔트리 바이트에 대한
+  단순 MSB 우선 비트스트림입니다.
+- **블록**을 `size` 바이트가 나올 때까지 반복:
+  - `r8 = getbits(16)` — 블록 내 심볼 수.
+  - **litlen** 테이블(`0x274d18`): 19심볼 코드길이(CL) 테이블을
+    `read_lengths_direct(19, 5, special_pos=3)`으로 읽고, `count = getbits(9)`개의 코드
+    길이를 CL로 RLE 디코딩(`s>2 → 길이 s-2`, `s==0 → 0`, `s==1 → 3+getbits(4)`개의 0,
+    `s==2 → 0x14+getbits(9)`개의 0).
+  - **dist** 테이블: `read_lengths_direct(window+1, (window+1-10)&5, -1)`.
+  - `r8`개 심볼: `sym<0x100`이면 리터럴; 아니면 `length=sym-0xFD`, 거리 코드
+    `dsym → dd = (dsym==0?1:(1<<(dsym-1))+1+getbits(dsym-1))`, 매치 복사.
+- **`read_lengths_direct(nsym,nbits,special)`**: `count=getbits(nbits)`; 0이면 단일 심볼
+  `= getbits(nbits)`. 아니면 길이마다: 상위 3비트 `t`; `t<7 → 길이 t`(3비트 소비) 아니면
+  `길이 = 7 + clz32(~(acc<<3))`(길이-3 소비). `i==special`에서 `r=getbits(2)`; `r>0`이면
+  `r`개의 0을 건너뜀.
 
-The game renders text by converting Shift-JIS → glyph index via the CMAP, blitting
-glyphs into A4 textures. Rendering pipeline verified in-game via Azahar LayeredFS.
+최소 유효 인코더는 블록마다 `r8`, degenerate CL 테이블(단일 심볼 10 → 0비트), `count=256`
+(256개 전부 길이 8 → 리터럴 바이트 B가 그대로 8비트 값 B), degenerate dist 테이블, 그리고
+원시 리터럴 바이트를 씁니다. `compress()` 참고.
+
+## 4. 비트맵 폰트 (압축 해제된 리소스, `culdcept/font.py`)
+
+```
+오프셋 0x30: CMAP -- u16 LE 문자 코드; glyph_index i -> CMAP[i].
+             ASCII 0x20-0x7e, 반각 0xa1-0xdf, Shift-JIS 0x8140+, 가이지 0xf9xx.
+크기 섹션 헤더(8바이트): 14 00 | bpg(u16) | b4 | w | h | bpp
+```
+
+4bpp 텍스트 크기(`bpp==4`, `b4==0xCE`)의 경우 글리프 비트맵은 `섹션 + 0xCE`에서 시작하며,
+글리프 `i`는 고정 `w×h` **A4**(4비트 알파, 상위 니블 우선) 셀로 `bpg = ceil(w/2)*h` 바이트,
+위치는 `섹션 + 0xCE + i*bpg`입니다.
+탑재 크기: **10px**(bpg 50), **12px**(bpg 72), **14px**(bpg 98).
+12×12 16bpp "아웃라인" 섹션(`b4==0x10`, `bpg 288`)도 있지만 글리프가 ~160개뿐(한자 없음)
+이라 본문 텍스트에는 쓰이지 않습니다.
+
+게임은 Shift-JIS를 CMAP으로 글리프 인덱스로 변환한 뒤 글리프를 A4 텍스처에 그려서 텍스트를
+렌더링합니다. 렌더링 파이프라인은 Azahar LayeredFS로 실기 확인했습니다.

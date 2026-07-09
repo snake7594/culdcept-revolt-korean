@@ -1,11 +1,10 @@
 """
-Demo mapping: Japanese kana -> phonetic Hangul.
+데모 매핑: 일본어 가나 -> 발음 한글.
 
-This is a PROOF-OF-CONCEPT only.  It does not translate anything; it simply
-replaces each kana glyph in the game's font with a Hangul syllable that sounds
-similar, so you can visually confirm that the Korean glyphs render in-game at
-every font size.  A real translation replaces the *text* (see docs/FORMAT.md),
-not just the glyphs.
+이것은 개념 증명(PoC)일 뿐입니다. 아무것도 번역하지 않으며, 게임 폰트의 각 가나
+글리프를 발음이 비슷한 한글 음절로 바꿔서 모든 폰트 크기에서 한글 글리프가 실기에
+렌더링되는지 눈으로 확인할 수 있게 합니다. 실제 번역은 글리프가 아니라 *텍스트*를
+바꿉니다(docs/FORMAT.md 참고).
 """
 
 _HIRA = {

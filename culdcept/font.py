@@ -1,22 +1,22 @@
 """
-Culdcept Revolt bitmap font (inside a decompressed CULDCEPT.DAT entry).
+컬드셉트 리볼트 비트맵 폰트 (압축 해제된 CULDCEPT.DAT 엔트리 내부).
 
-Structure of the decompressed font resource
--------------------------------------------
-  offset 0x30 (48):  CMAP -- an array of u16 LE character codes.  glyph_index i
-                     maps to CMAP[i].  Codes are ASCII (0x20-0x7e), half-width
-                     katakana (0xa1-0xdf) and Shift-JIS double-byte (0x8140+).
-  size sections:     each begins with an 8-byte header
+압축 해제된 폰트 리소스의 구조
+-----------------------------
+  오프셋 0x30 (48):  CMAP -- u16 LE 문자 코드 배열. glyph_index i는 CMAP[i]에
+                     대응. 코드는 ASCII(0x20-0x7e), 반각 카타카나(0xa1-0xdf),
+                     Shift-JIS 더블바이트(0x8140+).
+  크기 섹션:         각각 8바이트 헤더로 시작
                          14 00 | bpg(u16 LE) | b4 | w | h | bpp
-                     For the 4bpp text fonts b4 == 0xCE, bpp == 4 and the glyph
-                     bitmaps start at  section + 0xCE.  Glyph i is a fixed
-                     w x h, 4-bit-alpha (A4) cell of `bpg` bytes
-                     (bpg == ceil(w/2)*h), MSB nibble first, at
+                     4bpp 텍스트 폰트는 b4 == 0xCE, bpp == 4이고 글리프 비트맵은
+                     section + 0xCE에서 시작. 글리프 i는 고정 w x h, 4비트 알파
+                     (A4) 셀로 `bpg` 바이트(bpg == ceil(w/2)*h), 상위 니블 우선,
+                     위치는
                          section + 0xCE + i * bpg
-                     The game ships 10 px, 12 px and 14 px text sizes.
+                     게임은 10px, 12px, 14px 텍스트 크기를 탑재합니다.
 
-Only the 4bpp text sections are handled (that is what on-screen text uses).  A
-12x12 16bpp "outline" section also exists but is not needed here.
+4bpp 텍스트 섹션만 다룹니다(화면 텍스트가 이걸 씀). 12x12 16bpp "아웃라인"
+섹션도 있으나 여기서는 필요 없습니다.
 """
 import struct
 

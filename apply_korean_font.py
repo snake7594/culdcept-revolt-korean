@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """
-Apply the Korean-font DEMO to your own CULDCEPT.DAT (Culdcept Revolt, 3DS).
+본인의 CULDCEPT.DAT(컬드셉트 리볼트, 3DS)에 한글 폰트 데모를 적용한다.
 
-It reads the font resource out of YOUR CULDCEPT.DAT, replaces every kana glyph
-(at all bitmap sizes) with a phonetic Hangul glyph rendered from a Korean TTF,
-re-compresses it and writes a patched CULDCEPT.DAT.  No game data ships with this
-tool -- the glyphs are drawn from your system font and the bytes come from your
-own file.
+본인의 CULDCEPT.DAT에서 폰트 리소스를 읽어, 모든 비트맵 크기의 각 가나 글리프를
+한글 TTF로 렌더링한 발음 한글 글리프로 교체하고, 다시 압축해서 패치된 CULDCEPT.DAT를
+씁니다. 이 툴은 게임 데이터를 포함하지 않습니다 -- 글리프는 시스템 폰트에서 그려지고
+바이트는 본인의 파일에서 옵니다.
 
-Usage:
-    python apply_korean_font.py <in CULDCEPT.DAT> <out CULDCEPT.DAT> [--font malgun.ttf]
+사용법:
+    python apply_korean_font.py <원본 CULDCEPT.DAT> <출력 CULDCEPT.DAT> [--font malgun.ttf]
 
-Then use the output via Azahar/Lime3DS LayeredFS:
+그 다음 결과물을 Azahar/Lime3DS LayeredFS로 사용:
     load/mods/00040000000F5700/romfs/CULDCEPT.DAT
-or rebuild your ROM/CIA with it.
+또는 이것으로 ROM/CIA를 재빌드하세요.
 
-Requires: Python 3, Pillow.  A Korean TTF (e.g. Windows "malgun.ttf" / Malgun
-Gothic, or NanumGothic) must be available.
+필요: 파이썬 3, Pillow. 한글 TTF(예: 윈도우 "malgun.ttf"(맑은 고딕) 또는 나눔고딕)가
+있어야 합니다.
 """
 import argparse
 import os

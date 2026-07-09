@@ -1,17 +1,17 @@
 """
-CULDCEPT.DAT type 0x08 / 0x0c codec  --  decompressor + compressor (pure Python).
+CULDCEPT.DAT 타입 0x08 / 0x0c 코덱 -- 디컴프레서 + 컴프레서 (순수 파이썬).
 
-This is the "text/font" codec used by Culdcept Revolt (3DS).  It is a custom,
-DEFLATE-flavoured canonical-Huffman + LZ scheme.  Reverse-engineered from the
-game's ARM decoder (dispatcher guest 0x27f3f4 -> handler 0x274b88 / 0x274b90,
-bit reader 0x275020/0x275028, size varint 0x2747f8, code-length readers
-0x274e08 / 0x274d18).  No game code or data is included here -- only the format.
+컬드셉트 리볼트(3DS)의 "텍스트/폰트" 코덱입니다. DEFLATE 계열의 커스텀
+canonical-Huffman + LZ 방식으로, 게임의 ARM 디코더에서 리버스 엔지니어링했습니다
+(디스패처 guest 0x27f3f4 -> 핸들러 0x274b88 / 0x274b90, 비트 리더
+0x275020/0x275028, 크기 varint 0x2747f8, 코드길이 리더 0x274e08 / 0x274d18).
+게임 코드나 데이터는 포함하지 않으며, 포맷만 담고 있습니다.
 
-  decompress(entry_bytes) -> bytes      # whole entry incl. the type/size header
-  compress(data, typ=0x0c) -> bytes     # produce a valid entry the game accepts
+  decompress(entry_bytes) -> bytes      # 타입/크기 헤더를 포함한 엔트리 전체
+  compress(data, typ=0x0c) -> bytes     # 게임이 받아들이는 유효 엔트리 생성
 
-Types 0x0d / 0x8d use a different (LZMA-family) range coder and are not handled
-here; the font and most UI text live in 0x08 / 0x0c entries.
+타입 0x0d / 0x8d는 다른 (LZMA 계열) 레인지 코더를 쓰며 여기서 다루지 않습니다.
+폰트와 대부분의 UI 텍스트는 0x08 / 0x0c 엔트리에 있습니다.
 """
 
 MASK = 0xFFFFFFFF

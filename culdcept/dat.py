@@ -1,17 +1,16 @@
 """
-CULDCEPT.DAT archive container (Culdcept Revolt, 3DS).
+CULDCEPT.DAT 아카이브 컨테이너 (컬드셉트 리볼트, 3DS).
 
-Layout
-------
-  header : an array of 8-byte records (u32 LE offset, u32 LE size), one per entry.
-           The number of entries is (first entry's offset) / 8, because the entry
-           data begins immediately after the record table.
-  entry  : DAT[offset : offset+size].  The first byte of an entry is the codec
-           type (see huffman.py / the range-coder types 0x0d/0x8d); type 0x00 is a
-           raw/nested container.
+구조
+----
+  헤더   : 엔트리마다 8바이트 레코드(u32 LE offset, u32 LE size)의 배열.
+           엔트리 개수 = (첫 엔트리의 offset) / 8. 엔트리 데이터가 레코드 테이블
+           바로 뒤에서 시작하기 때문입니다.
+  엔트리 : DAT[offset : offset+size]. 엔트리의 첫 바이트는 코덱 타입입니다
+           (huffman.py 참고 / 레인지 코더 타입 0x0d,0x8d). 타입 0x00은
+           원시/중첩 컨테이너입니다.
 
-This module only parses the table and rebuilds the file.  It does not ship any
-game data.
+이 모듈은 테이블을 파싱하고 파일을 재빌드할 뿐, 게임 데이터를 포함하지 않습니다.
 """
 import struct
 
@@ -32,11 +31,11 @@ class Dat:
         return self.data[off] if size else -1
 
     def replace_entry(self, i: int, new_entry: bytes) -> None:
-        """Append `new_entry` at end of file and point record i at it.
+        """`new_entry`를 파일 끝에 추가하고 레코드 i가 그것을 가리키게 한다.
 
-        Appending (rather than rewriting in place) keeps every other entry's
-        offset unchanged, so only 8 bytes of the table move.  The old bytes are
-        left orphaned but harmless.
+        제자리에서 다시 쓰지 않고 뒤에 추가하므로 다른 엔트리의 offset은 그대로
+        유지되고, 테이블에서 8바이트만 바뀝니다. 기존 바이트는 참조되지 않은 채
+        남지만 무해합니다.
         """
         new_off = len(self.data)
         self.data.extend(new_entry)
