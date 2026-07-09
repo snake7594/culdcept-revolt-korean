@@ -168,10 +168,10 @@ def main():
         assert wansung.page_count(EVENTS_KO[i]) == ORIG_PAGES[i], \
             "이벤트 %d 페이지 수 불일치(번역 데이터 오류)" % i
 
-    # 매핑: 대사 + UI + 시작설정 음절 전부
-    sylls = wansung.collect_syllables(*EVENTS_KO.values(), *UI_KO.values(), *SETUP_KO.values())
-    syll2code = wansung.build_map(sylls, cmap)
-    print("한글 음절 %d개 -> 한자 슬롯 배정" % len(syll2code))
+    # ★고정 매핑: KS 완성형 2350자를 한자 슬롯에 미리 배정(+번역에 쓰인 2350 밖 음절).
+    used = wansung.collect_syllables(*EVENTS_KO.values(), *UI_KO.values(), *SETUP_KO.values())
+    syll2code = wansung.build_fixed_map(cmap, extra=sorted(used))
+    print("한글 %d자(완성형 2350 고정) -> 한자 슬롯 배정" % len(syll2code))
 
     # 폰트 글리프 주입(모든 4bpp 크기)
     render = make_renderer(ttf)

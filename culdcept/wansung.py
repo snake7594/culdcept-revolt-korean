@@ -41,6 +41,39 @@ def build_map(syllables, cmap) -> dict:
     return {s: slots[i] for i, s in enumerate(sylls)}
 
 
+def _ks_wansung_2350():
+    """KS X 1001(완성형) 한글 2350자를 KS/EUC-KR 표준 순서로 생성."""
+    out = []
+    for lead in range(0xB0, 0xC9):
+        for trail in range(0xA1, 0xFF):
+            try:
+                ch = bytes([lead, trail]).decode("euc-kr")
+            except UnicodeDecodeError:
+                continue
+            if len(ch) == 1 and 0xAC00 <= ord(ch) <= 0xD7A3:
+                out.append(ch)
+    return out
+
+
+WANSUNG_2350 = _ks_wansung_2350()      # 표준 완성형 2350자(고정 순서)
+
+
+def build_fixed_map(cmap, extra=()) -> dict:
+    """★고정 매핑: KS 완성형 2350자(+extra)를 L1 한자 슬롯에 순서대로 배정.
+
+    build_map(정렬된 사용음절)과 달리, 어떤 텍스트를 넣든 각 음절의 코드가 항상
+    같다(폰트에 2350자를 미리 넣어 두므로). extra는 2350에 없는 추가 음절(있으면
+    뒤에 이어 배정). 반환 {음절: sjis_code}.
+    """
+    slots = kanji_slots(cmap)
+    base = WANSUNG_2350
+    baseset = set(base)
+    sylls = list(base) + [c for c in dict.fromkeys(extra) if c not in baseset]
+    if len(sylls) > len(slots):
+        raise ValueError("한자 슬롯 부족: 필요 %d, 가용 %d" % (len(sylls), len(slots)))
+    return {s: slots[i] for i, s in enumerate(sylls)}
+
+
 def collect_syllables(*texts) -> set:
     """여러 텍스트에서 한글 음절 집합을 모은다."""
     out = set()
