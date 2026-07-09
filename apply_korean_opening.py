@@ -176,11 +176,14 @@ def main():
     new_font = huffman.compress(bytes(fontbuf), typ=d.entry_type(font_idx))
     assert huffman.decompress(new_font) == bytes(fontbuf), "폰트 재압축 왕복 실패"
 
-    # 대사 교체
+    # 대사 교체 (★페이지 단위 길이 보존: 게임이 절대 오프셋으로 참조하므로 필수)
     orig_secs = scen.parse_sections(d.entry(open_idx))
     sec_type = d.entry(open_idx)[orig_secs[sec_idx][0]]
-    new_events = [wansung.encode(EVENTS_KO[i], syll2code) for i in range(25)]
-    new_sec_dec = scen.rebuild_section(sec_dec, text_start, new_events)
+    ko_events = [EVENTS_KO[i] for i in range(len(EVENTS_KO))]
+    new_sec_dec = scen.rebuild_section_fit(
+        sec_dec, text_start, ko_events,
+        lambda page: wansung.encode(page, syll2code))
+    assert len(new_sec_dec) == len(sec_dec), "길이 보존 실패"
     new_sec = huffman.compress(new_sec_dec, typ=sec_type)
     assert huffman.decompress(new_sec) == new_sec_dec, "대사 섹션 왕복 실패"
     new_container = scen.rebuild_container(d.entry(open_idx), sec_idx, new_sec)
