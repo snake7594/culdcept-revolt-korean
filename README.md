@@ -23,18 +23,22 @@
 
 ## 적용 방법
 
-두 가지 방법이 있습니다. 같은 한글 폰트(기본: 맑은 고딕)를 쓰면 결과가 동일합니다
-— xdelta 패치는 맑은 고딕으로 만든 것이므로, 방법 A에서 다른 TTF를 지정하면 글리프
-모양만 달라집니다.
+두 가지 방법이 있습니다. 같은 한글 폰트를 쓰면 결과가 동일합니다 — xdelta 패치는
+**나눔스퀘어 네오 Bold**로 만든 것이므로, 방법 A에서 그 폰트를 `fonts/`에 두거나
+`--font`로 지정하면 릴리즈와 똑같이 나옵니다(다른 TTF면 글리프 모양만 달라짐).
 
 ### 방법 A — 파이썬 툴 (권장, 어떤 판본이든 구조가 같으면 동작)
 
-필요: 파이썬 3, [Pillow](https://pypi.org/project/Pillow/), 한글 TTF
-(윈도우 `C:\Windows\Fonts\malgun.ttf` 맑은 고딕, 또는 나눔고딕).
+필요: 파이썬 3, [Pillow](https://pypi.org/project/Pillow/), 한글 TTF.
+릴리즈 패치는 **나눔스퀘어 네오 Bold**로 렌더링합니다 — 릴리즈와 똑같은 모양을
+원하면 그 폰트를 `fonts/NanumSquareNeo-cBd.ttf` 로 두세요([`fonts/README.md`](fonts/README.md),
+[네이버 배포처](https://hangeul.naver.com/font)). 없으면 시스템 폰트(맑은 고딕 등)로
+대체됩니다.
 
 ```bash
 pip install pillow
-python apply_korean_opening.py 원본/CULDCEPT.DAT 출력/CULDCEPT.DAT --font malgun.ttf
+python apply_korean_opening.py 원본/CULDCEPT.DAT 출력/CULDCEPT.DAT
+# 또는 원하는 폰트 지정:  --font <TTF 경로>
 ```
 
 툴이 본인 파일에서 폰트·대사·UI 위치를 자동으로 찾아 한글로 교체합니다.

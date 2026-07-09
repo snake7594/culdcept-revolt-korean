@@ -15,3 +15,8 @@ code.bin
 __pycache__/
 *.pyc
 out/
+
+# 폰트 파일은 재배포하지 않음(사용자가 직접 배치)
+*.ttf
+*.otf
+!fonts/README.md

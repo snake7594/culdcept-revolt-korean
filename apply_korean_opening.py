@@ -28,7 +28,12 @@ from PIL import Image, ImageDraw, ImageFont
 from culdcept import dat as datmod, huffman, font as fontmod, scen, wansung
 from opening_ko import EVENTS_KO, ORIG_PAGES, UI_KO
 
+# 릴리즈 패치는 '나눔스퀘어 네오 Bold'로 렌더링합니다. 그 폰트를 fonts/ 폴더에
+# NanumSquareNeo-cBd.ttf 로 두면(fonts/README.md 참고) 릴리즈와 동일하게 나옵니다.
+# 없으면 시스템 한글 폰트(맑은 고딕 등)로 대체합니다.
+_HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_FONTS = [
+    os.path.join(_HERE, "fonts", "NanumSquareNeo-cBd.ttf"),
     r"C:\Windows\Fonts\malgun.ttf",
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/System/Library/Fonts/AppleSDGothicNeo.ttc",
