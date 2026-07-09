@@ -26,7 +26,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 from culdcept import dat as datmod, huffman, font as fontmod, scen, wansung
-from opening_ko import EVENTS_KO, ORIG_PAGES, UI_KO
+from opening_ko import EVENTS_KO, ORIG_PAGES, UI_KO, SETUP_KO
 
 # 릴리즈 패치는 '나눔스퀘어 네오 Bold'로 렌더링합니다. 그 폰트를 fonts/ 폴더에
 # NanumSquareNeo-cBd.ttf 로 두면(fonts/README.md 참고) 릴리즈와 동일하게 나옵니다.
@@ -168,8 +168,8 @@ def main():
         assert wansung.page_count(EVENTS_KO[i]) == ORIG_PAGES[i], \
             "이벤트 %d 페이지 수 불일치(번역 데이터 오류)" % i
 
-    # 매핑: 대사 + UI 음절 전부
-    sylls = wansung.collect_syllables(*EVENTS_KO.values(), *UI_KO.values())
+    # 매핑: 대사 + UI + 시작설정 음절 전부
+    sylls = wansung.collect_syllables(*EVENTS_KO.values(), *UI_KO.values(), *SETUP_KO.values())
     syll2code = wansung.build_map(sylls, cmap)
     print("한글 음절 %d개 -> 한자 슬롯 배정" % len(syll2code))
 
@@ -217,6 +217,24 @@ def main():
             p = i + 1
         if hit == 0:
             missing.append(jp)
+    # 시작 설정 UI: 문자열 시작(널 또는 0x0c 포맷코드 직후) 기준으로 다음 널까지 교체
+    n_set = 0
+    for jp, ko in SETUP_KO.items():
+        nb = jp.encode("shift_jis")
+        ko_bytes = b"".join(wansung.encode_char(c, syll2code) for c in ko)
+        p = 0
+        while True:
+            i = ui.find(nb, p)
+            if i < 0:
+                break
+            if i == 0 or ui[i - 1] in (0, 0x0c):
+                en = ui.find(b"\x00", i)
+                if en < 0:
+                    en = len(ui)
+                if len(ko_bytes) <= en - i:
+                    ui[i:en] = ko_bytes + b"\x00" * (en - i - len(ko_bytes))
+                    n_set += 1
+            p = i + 1
     assert len(ui) == len(ui_blob), "UI 길이 변경됨(버그)"
     if missing:
         print("경고: 이 판본에서 찾지 못해 미교체된 UI 라벨: " + ", ".join(missing))
@@ -227,7 +245,7 @@ def main():
     d.replace_entry(open_idx, new_container)
     d.replace_entry(ui_idx, new_ui)
     open(args.outfile, "wb").write(d.build())
-    print("대사 25개 이벤트, UI %d개 라벨 교체 완료" % n_ui)
+    print("대사 25개 이벤트, UI %d개 + 시작설정 %d개 라벨 교체 완료" % (n_ui, n_set))
     print("완료: %s" % args.outfile)
 
 
