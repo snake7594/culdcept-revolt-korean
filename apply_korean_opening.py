@@ -103,6 +103,8 @@ def find_opening(d):
             ts = scen.text_start_for(dec, n)
             if ts is None:
                 continue
+            if ts and dec[ts - 1] != 0x00:      # 텍스트 직전은 null이어야 함(전제 위반 스킵)
+                continue
             evs = scen.split_events(dec[ts:])
             if len(evs) != n:
                 continue

@@ -63,6 +63,11 @@ def text_start_for(section_dec: bytes, n_events: int):
     분할 결과의 맨 끝 빈 조각 하나(그 종료 null 뒤)만 제거하면, 뒤쪽 **n_events개
     세그먼트가 곧 텍스트 이벤트들**이다(split_events와 동일한 규칙). 그 첫 이벤트의
     시작 오프셋을 돌려준다. 세그먼트가 부족하면 None.
+
+    전제: 텍스트 영역 직전(=이벤트0 앞) 바이트는 null이어야 한다. 스크립트 헤더가
+    null로 끝나지 않으면 헤더 꼬리가 이벤트0에 병합될 수 있다(현재 판본은 성립).
+    호출부(find_opening)는 `dec[text_start-1]==0x00` 인지 확인해 전제 위반 후보를
+    건너뛴다.
     """
     parts = section_dec.split(b"\x00")
     if parts and parts[-1] == b"":          # 마지막 종료 null 뒤의 빈 조각만 제거
