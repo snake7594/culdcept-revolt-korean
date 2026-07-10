@@ -70,13 +70,16 @@ def main():
     ko = json.load(open(os.path.join(_HERE, "dialogue_ko.json"), encoding="utf-8"))
     cards_path = os.path.join(_HERE, "cards_ko.json")
     cards_ko = json.load(open(cards_path, encoding="utf-8")) if os.path.exists(cards_path) else {}
+    block_path = os.path.join(_HERE, "block_ko.json")
+    block_ko = json.load(open(block_path, encoding="utf-8")) if os.path.exists(block_path) else {}
     d = datmod.Dat(open(args.infile, "rb").read())
     cmap = fontmod.parse_cmap(huffman.decompress(d.entry(FONT_ENTRY)))
 
-    # 폰트: 완성형 2350 + 번역/카드/UI/설정에 쓰인 2350 밖 음절
+    # 폰트: 완성형 2350 + 번역/카드/블록대사/UI/설정에 쓰인 2350 밖 음절
     used = {c for ev in ko.values() for pages in ev.values() for p in pages for c in p if is_h(c)}
     used |= {c for t in list(UI_KO.values()) + list(SETUP_KO.values()) for c in t if is_h(c)}
     used |= {c for v in cards_ko.values() for c in v if is_h(c)}
+    used |= {c for evs in block_ko.values() for pages in evs.values() for p in pages for c in p if is_h(c)}
     extra = [c for c in sorted(used) if c not in set(wansung.WANSUNG_2350)]
     syll2code = wansung.build_fixed_map(cmap, extra=extra)
     print("한글 %d자(완성형 2350%s) 폰트 주입" % (len(syll2code), (" + %d" % len(extra)) if extra else ""))
@@ -98,6 +101,21 @@ def main():
             if len(out)+step > limit: break
             out += bs[i:i+step]; i += step
         return bytes(out)
+
+    def fit_page(view, tokens, budget):
+        """예산 초과 시: 끝쪽 공백부터 제거 → 그래도 넘으면 안전 절단(문자경계 보존)."""
+        enc = cardtext.encode(view, tokens, syll2code)
+        if len(enc) <= budget:
+            return enc
+        s = list(view)
+        while len(cardtext.encode("".join(s), tokens, syll2code)) > budget:
+            pos = -1
+            for j in range(len(s) - 1, -1, -1):
+                if s[j] == " ": pos = j; break
+            if pos < 0: break
+            del s[pos]
+        enc = cardtext.encode("".join(s), tokens, syll2code)
+        return enc if len(enc) <= budget else trunc(enc, budget)
 
     # 폰트 주입
     fontbuf = bytearray(huffman.decompress(d.entry(FONT_ENTRY)))
@@ -197,11 +215,48 @@ def main():
     new_ui = huffman.compress(bytes(ui), typ=d.entry_type(UI_ENTRY))
     assert huffman.decompress(new_ui) == bytes(ui)
 
+    # 캐릭터/전투 대사 블록(엔트리 1849~1945, 직접압축 블롭, 페이지 길이보존)
+    n_blk = 0
+    for entry_s, evs in block_ko.items():
+        idx = int(entry_s)
+        ent = d.entry(idx)
+        if not ent or ent[0] not in (0x08, 0x0c):
+            continue
+        try:
+            dec = huffman.decompress(ent)
+        except Exception:
+            continue
+        ts, events = scen.find_text_region(dec)
+        if ts is None:
+            continue
+        region = bytearray()
+        for ei, ev in enumerate(events):
+            opages = ev.split(b"\x07")
+            kp = evs.get(str(ei))
+            for pi, opage in enumerate(opages):
+                if kp is not None and pi < len(kp) and kp[pi] != "":
+                    _, tokens = cardtext.tokenize(opage)
+                    enc = fit_page(kp[pi], tokens, len(opage))
+                    region += enc + bytes([PAD]) * (len(opage) - len(enc))
+                else:
+                    region += opage
+                if pi < len(opages) - 1:
+                    region += b"\x07"
+            region += b"\x00"
+            if kp is not None:
+                n_blk += 1
+        if len(region) != len(dec) - ts:
+            continue
+        new_dec = dec[:ts] + bytes(region)
+        new_sec = huffman.compress(new_dec, typ=ent[0])
+        assert huffman.decompress(new_sec) == new_dec
+        d.replace_entry(idx, new_sec)
+
     d.replace_entry(FONT_ENTRY, new_font)
     d.replace_entry(UI_ENTRY, new_ui)
     open(args.outfile, "wb").write(d.build())
-    print("대사 %d개 이벤트 + 카드 문자열 %d개 + UI/설정 교체 완료 -> %s"
-          % (n_ev, n_card, args.outfile))
+    print("스토리대사 %d + 카드 %d + 캐릭터대사 %d + UI/설정 교체 완료 -> %s"
+          % (n_ev, n_card, n_blk, args.outfile))
 
 
 if __name__ == "__main__":
