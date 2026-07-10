@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-컬드셉트 리볼트(3DS, 일본판) **전체 스토리 대사 + UI** 한국어 패치.
+컬드셉트 리볼트(3DS, 일판) **전체 스토리 대사 + 카드 데이터베이스 + UI** 한국어 패치.
 
-본인의 CULDCEPT.DAT 에서 시나리오 컨테이너(엔트리 1946~1958)의 모든 대사와
-UI/시작설정 텍스트(엔트리 1190)를 찾아 한국어로 교체하고, 필요한 한글 글리프를
-폰트(엔트리 1054)에 그려 넣어 패치된 CULDCEPT.DAT 를 씁니다.
+본인의 CULDCEPT.DAT 에서 시나리오 컨테이너(엔트리 1946~1958)의 모든 대사와,
+카드 데이터베이스(엔트리 1190: 카드 능력·설명·플레이버 및 UI/시작설정 텍스트)를
+찾아 한국어로 교체하고, 필요한 한글 글리프를 폰트(엔트리 1054)에 그려 넣어
+패치된 CULDCEPT.DAT 를 씁니다.
 
 게임은 대사 페이지를 텍스트 영역 내 절대 오프셋으로 참조하므로, 각 대화창의
 한국어는 원문 페이지의 바이트 길이 이하로 넣고 부족분은 공백으로 채워 모든
-오프셋을 보존합니다(dialogue_ko.json 의 번역은 이 한도에 맞춰져 있습니다).
+오프셋을 보존합니다. 카드 텍스트(1190)도 포인터로 참조되므로 원문 문자열 길이
+이하로 제자리 교체합니다(dialogue_ko.json / cards_ko.json 의 번역은 이 한도에
+맞춰져 있습니다).
 
 이 툴은 게임 데이터를 포함하지 않습니다 — 한글 글리프는 폰트에서 그려지고,
-원문 바이트는 전부 본인의 파일에서 읽습니다. dialogue_ko.json 은 한국어 번역만
-담습니다(일본어 원문 없음).
+원문 바이트(아이콘·제어코드 포함)는 전부 본인의 파일에서 읽습니다.
+dialogue_ko.json / cards_ko.json 은 한국어 번역만 담습니다(일본어 원문 없음).
 
 사용법:
     python apply_korean_full.py <원본 CULDCEPT.DAT> <출력 CULDCEPT.DAT> [--font TTF]
@@ -26,7 +29,7 @@ import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
-from culdcept import dat as datmod, huffman, font as fontmod, scen, wansung
+from culdcept import dat as datmod, huffman, font as fontmod, scen, wansung, cardtext
 from opening_ko import UI_KO, SETUP_KO
 
 FONT_ENTRY, UI_ENTRY = 1054, 1190
@@ -65,12 +68,15 @@ def main():
         sys.exit("한글 폰트를 찾지 못했습니다. --font <TTF 경로> 로 지정하세요")
 
     ko = json.load(open(os.path.join(_HERE, "dialogue_ko.json"), encoding="utf-8"))
+    cards_path = os.path.join(_HERE, "cards_ko.json")
+    cards_ko = json.load(open(cards_path, encoding="utf-8")) if os.path.exists(cards_path) else {}
     d = datmod.Dat(open(args.infile, "rb").read())
     cmap = fontmod.parse_cmap(huffman.decompress(d.entry(FONT_ENTRY)))
 
-    # 폰트: 완성형 2350 + 번역/UI/설정에 쓰인 2350 밖 음절
+    # 폰트: 완성형 2350 + 번역/카드/UI/설정에 쓰인 2350 밖 음절
     used = {c for ev in ko.values() for pages in ev.values() for p in pages for c in p if is_h(c)}
     used |= {c for t in list(UI_KO.values()) + list(SETUP_KO.values()) for c in t if is_h(c)}
+    used |= {c for v in cards_ko.values() for c in v if is_h(c)}
     extra = [c for c in sorted(used) if c not in set(wansung.WANSUNG_2350)]
     syll2code = wansung.build_fixed_map(cmap, extra=extra)
     print("한글 %d자(완성형 2350%s) 폰트 주입" % (len(syll2code), (" + %d" % len(extra)) if extra else ""))
@@ -150,8 +156,24 @@ def main():
             cont = scen.rebuild_container(cont, k, new_sec)
         d.replace_entry(idx, cont)
 
-    # UI + 시작설정(엔트리 1190)
+    # 카드 데이터베이스 + UI + 시작설정(엔트리 1190)
     ui = bytearray(huffman.decompress(d.entry(UI_ENTRY)))
+    # 카드 텍스트: 본인 파일에서 문자열을 열거·중복제거한 순서(=인덱스)로 제자리 교체
+    n_card = 0
+    if cards_ko:
+        uniq = cardtext.enum_unique(ui)
+        for idx, (raw, offs) in enumerate(uniq.items()):
+            view = cards_ko.get(str(idx))
+            if view is None:
+                continue
+            _, tokens = cardtext.tokenize(raw)
+            enc = cardtext.encode(view, tokens, syll2code)
+            if len(enc) > len(raw):
+                enc = trunc(enc, len(raw))
+            body = enc + bytes([PAD]) * (len(raw) - len(enc))
+            for off in offs:
+                ui[off:off+len(raw)] = body
+                n_card += 1
     def kob(t): return b"".join(wansung.encode_char(c, syll2code) for c in t)
     for jp, k in UI_KO.items():
         nb = jp.encode("shift_jis"); kb = kob(k); p = 0
@@ -178,7 +200,8 @@ def main():
     d.replace_entry(FONT_ENTRY, new_font)
     d.replace_entry(UI_ENTRY, new_ui)
     open(args.outfile, "wb").write(d.build())
-    print("대사 %d개 이벤트 + UI/설정 교체 완료 -> %s" % (n_ev, args.outfile))
+    print("대사 %d개 이벤트 + 카드 문자열 %d개 + UI/설정 교체 완료 -> %s"
+          % (n_ev, n_card, args.outfile))
 
 
 if __name__ == "__main__":
