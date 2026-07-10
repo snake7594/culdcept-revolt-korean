@@ -86,9 +86,12 @@ def collect_syllables(*texts) -> set:
 
 def encode_char(ch: str, syll2code: dict) -> bytes:
     if is_hangul(ch):
-        code = syll2code[ch]
-        return bytes([code >> 8, code & 0xFF])
-    return _FULLWIDTH.get(ch, ch).encode("shift_jis")
+        code = syll2code.get(ch)
+        return b"" if code is None else bytes([code >> 8, code & 0xFF])
+    try:
+        return _FULLWIDTH.get(ch, ch).encode("shift_jis")
+    except UnicodeEncodeError:
+        return b""          # SJIS로 인코딩 불가한 문자는 건너뜀(견고성)
 
 
 def encode(text: str, syll2code: dict) -> bytes:

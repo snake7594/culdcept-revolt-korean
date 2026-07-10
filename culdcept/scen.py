@@ -86,6 +86,30 @@ def text_start_for(section_dec: bytes, n_events: int):
     return off
 
 
+def find_text_region(dec: bytes):
+    """섹션에서 뒤쪽의 null-종료 SJIS 텍스트 이벤트 run을 (text_start, [event_bytes])로
+    반환. 이벤트 개수를 몰라도 되는 범용 탐지(text_start_for는 개수를 알 때). 없으면
+    (None, [])."""
+    segs = []          # (start_offset, body)
+    s = 0
+    for j, b in enumerate(dec):
+        if b == 0x00:
+            segs.append((s, dec[s:j])); s = j + 1
+    if not segs:
+        return None, []
+    if segs[-1][1] == b"":
+        segs = segs[:-1]
+    i = len(segs) - 1
+    while i >= 0 and (_looks_text(segs[i][1]) or len(segs[i][1]) == 0):
+        i -= 1
+    run = segs[i + 1:]
+    while run and len(run[0][1]) == 0:
+        run = run[1:]
+    if sum(1 for _, e in run if _looks_text(e)) < 2:
+        return None, []
+    return run[0][0], [e for _, e in run]
+
+
 def find_text_start(section_dec: bytes) -> int:
     """(구버전 휴리스틱) 첫 SJIS 텍스트 세그먼트 시작 — 스크립트 헤더 오탐 주의."""
     n = len(section_dec)
