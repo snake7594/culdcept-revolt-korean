@@ -151,15 +151,33 @@ def main():
         return bytes(dec)
 
     # 폰트 주입 — 4bpp(대사·카드 패널) + 1bpp(소형 UI/HUD·스톡정보·카드상세 헤더) 모든 섹션
+    # 글리프별로 잉크가 셀(w x h)에 들어가는 최대 포인트 크기를 찾아 렌더.
+    # (셀 크기 그대로 렌더하면 일부 음절의 잉크가 셀보다 1~3px 커서, 중앙정렬 시
+    #  위가 잘려 '목'이 '복'처럼 보이는 문제가 있었음)
     fontbuf = bytearray(huffman.decompress(d.entry(FONT_ENTRY)))
     sizes = fontmod.find_all_sections(fontbuf)
-    cache = {}
+    fcache = {}
+    _meas = ImageDraw.Draw(Image.new("L", (64, 64)))
+
+    def render_cell(s, w, h):
+        size = h
+        while size >= 6:
+            px = fcache.get(size)
+            if px is None:
+                px = ImageFont.truetype(ttf, size); fcache[size] = px
+            bb = _meas.textbbox((0, 0), s, font=px)
+            tw, th = bb[2] - bb[0], bb[3] - bb[1]
+            if tw <= w and th <= h:
+                break
+            size -= 1
+        img = Image.new("L", (w, h), 0)
+        dr = ImageDraw.Draw(img)
+        dr.text(((w - tw) // 2 - bb[0], (h - th) // 2 - bb[1]), s, fill=255, font=px)
+        return img
+
     for (soff, bpg, w, h, bpp) in sizes:
         for s, code in syll2code.items():
-            px = cache.get(h) or ImageFont.truetype(ttf, h); cache[h] = px
-            img = Image.new("L", (w, h), 0); dr = ImageDraw.Draw(img)
-            bb = dr.textbbox((0, 0), s, font=px); tw, th = bb[2]-bb[0], bb[3]-bb[1]
-            dr.text(((w-tw)//2-bb[0], (h-th)//2-bb[1]), s, fill=255, font=px)
+            img = render_cell(s, w, h)
             glyph = fontmod.render_a4(img, w, h) if bpp == 4 else fontmod.render_1bpp(img, w, h)
             fontmod.write_glyph(fontbuf, soff, bpg, cmap[code], glyph)
     new_font = huffman.compress(bytes(fontbuf), typ=d.entry_type(FONT_ENTRY))
@@ -251,12 +269,17 @@ def main():
                 if len(kb) <= en - i:
                     ui[i:en] = kb + b"\x00"*(en-i-len(kb))
             p = i + 1
+    ui = bytearray(apply_missed(bytes(ui), missed_ko.get(str(UI_ENTRY), {})))
     new_ui = huffman.compress(bytes(ui), typ=d.entry_type(UI_ENTRY))
     assert huffman.decompress(new_ui) == bytes(ui)
 
     # 캐릭터/전투 대사 블록(엔트리 1849~1945, 직접압축 블롭, 페이지 길이보존)
+    # + missed_ko 에만 있는 기타 블롭 엔트리도 함께 처리
     n_blk = 0
-    for entry_s, evs in block_ko.items():
+    blob_keys = set(block_ko) | {k for k in missed_ko
+                                 if "." not in k and int(k) != UI_ENTRY}
+    for entry_s in sorted(blob_keys, key=int):
+        evs = block_ko.get(entry_s, {})
         idx = int(entry_s)
         ent = d.entry(idx)
         if not ent or ent[0] not in (0x08, 0x0c):
@@ -266,9 +289,16 @@ def main():
         except Exception:
             continue
         ts, events = scen.find_text_region(dec)
-        if ts is None:
+        mm = missed_ko.get(str(idx), {})
+        if ts is None and not mm:
             continue
-        dec = apply_missed(dec, missed_ko.get(str(idx), {}))   # 놓친 중간 세그먼트(예: 1849 튜토리얼)
+        dec = apply_missed(dec, mm)   # 놓친 중간 세그먼트(예: 1849 튜토리얼)
+        if ts is None:                # 끝 영역 없는 블롭: missed 만 반영
+            if dec != huffman.decompress(ent):
+                new_sec = huffman.compress(dec, typ=ent[0])
+                assert huffman.decompress(new_sec) == dec
+                d.replace_entry(idx, new_sec)
+            continue
         region = bytearray()
         for ei, ev in enumerate(events):
             opages = ev.split(b"\x07")
