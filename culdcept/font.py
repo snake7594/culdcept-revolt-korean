@@ -55,6 +55,48 @@ def find_sections(font: bytes):
     return out
 
 
+def find_all_sections(font: bytes):
+    """Return [(section_offset, bpg, w, h, bpp)] for every glyph section.
+
+    엔트리 1054 에는 4bpp(안티에일리어스, 대사·카드 패널용) 섹션 3개(10/12/14px)와
+    1bpp(크리스프, 소형 UI/HUD·스톡정보·카드상세 헤더용) 섹션 2개(10/12px)가 있습니다.
+    소형 UI 는 1bpp 로 렌더되므로 이 섹션도 함께 한글로 그려야 합니다.
+    """
+    out = []
+    p = 0
+    n = len(font)
+    while p < n - 8:
+        if font[p] == 0x14 and font[p + 1] == 0x00:
+            bpg = struct.unpack_from("<H", font, p + 2)[0]
+            b4 = font[p + 4]; w = font[p + 5]; h = font[p + 6]; bpp = font[p + 7]
+            if b4 == 0xCE and 6 <= w <= 40 and w == h:
+                if bpp == 4 and bpg == ((w + 1) // 2) * h:
+                    out.append((p, bpg, w, h, 4))
+                elif bpp == 1 and bpg == (w * h + 7) // 8:
+                    out.append((p, bpg, w, h, 1))
+        p += 2
+    return out
+
+
+def render_1bpp(pil_image, w, h, threshold=110) -> bytes:
+    """Pack a w x h grayscale PIL image into 1bpp (MSB-first packed bitstream).
+
+    1bpp 글리프는 행우선 w*h 비트를 바이트 패딩 없이 연속 패킹(비트당 픽셀,
+    MSB 우선)하며 bpg == ceil(w*h/8) 바이트입니다. 안티에일리어스 렌더를
+    threshold 로 이진화합니다.
+    """
+    a = pil_image.load()
+    total = w * h
+    out = bytearray((total + 7) // 8)
+    bit = 0
+    for y in range(h):
+        for x in range(w):
+            if a[x, y] >= threshold:
+                out[bit >> 3] |= 0x80 >> (bit & 7)
+            bit += 1
+    return bytes(out)
+
+
 def sjis_code(ch: str):
     """Shift-JIS code (int) for a single character, or None."""
     try:

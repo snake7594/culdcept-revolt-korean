@@ -117,17 +117,18 @@ def main():
         enc = cardtext.encode("".join(s), tokens, syll2code)
         return enc if len(enc) <= budget else trunc(enc, budget)
 
-    # 폰트 주입
+    # 폰트 주입 — 4bpp(대사·카드 패널) + 1bpp(소형 UI/HUD·스톡정보·카드상세 헤더) 모든 섹션
     fontbuf = bytearray(huffman.decompress(d.entry(FONT_ENTRY)))
-    sizes = fontmod.find_sections(fontbuf)
+    sizes = fontmod.find_all_sections(fontbuf)
     cache = {}
-    for (soff, bpg, w, h) in sizes:
+    for (soff, bpg, w, h, bpp) in sizes:
         for s, code in syll2code.items():
             px = cache.get(h) or ImageFont.truetype(ttf, h); cache[h] = px
             img = Image.new("L", (w, h), 0); dr = ImageDraw.Draw(img)
             bb = dr.textbbox((0, 0), s, font=px); tw, th = bb[2]-bb[0], bb[3]-bb[1]
             dr.text(((w-tw)//2-bb[0], (h-th)//2-bb[1]), s, fill=255, font=px)
-            fontmod.write_glyph(fontbuf, soff, bpg, cmap[code], fontmod.render_a4(img, w, h))
+            glyph = fontmod.render_a4(img, w, h) if bpp == 4 else fontmod.render_1bpp(img, w, h)
+            fontmod.write_glyph(fontbuf, soff, bpg, cmap[code], glyph)
     new_font = huffman.compress(bytes(fontbuf), typ=d.entry_type(FONT_ENTRY))
     assert huffman.decompress(new_font) == bytes(fontbuf)
 

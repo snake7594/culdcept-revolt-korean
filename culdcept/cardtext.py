@@ -18,11 +18,35 @@ from . import scen
 L, R = "⟦", "⟧"   # ⟦ ⟧
 
 
+def _jp_char_count(s):
+    """문자열 내 디코드 가능한 일본어(가나/한자) 글자 수."""
+    cnt = 0
+    i = 0
+    n = len(s)
+    while i < n:
+        b = s[i]
+        if 0x81 <= b <= 0xfc and i + 1 < n:
+            try:
+                o = ord(s[i:i+2].decode("shift_jis"))
+                if (0x3040 <= o <= 0x30ff) or (0x4e00 <= o <= 0x9fff):
+                    cnt += 1
+            except UnicodeDecodeError:
+                pass
+            i += 2
+        else:
+            i += 1
+    return cnt
+
+
 def enum_unique(ui):
     """1190 평문에서 실제 텍스트로 보이는 null 종료 문자열을 열거·중복제거.
 
     반환: OrderedDict {bytes: [offset, ...]} — 첫 등장 순서(= 인덱스).
     cards_ko.json 의 키는 이 순서의 정수 인덱스입니다.
+
+    선두에 색상·위치 서식 바이트(0x0e/0x18/0x0c 등)가 붙은 카드 설명·통계 패널
+    문자열은 scen._looks_text 를 통과하지 못하므로, 디코드 가능한 일본어 글자가
+    3자 이상이면 함께 포함합니다(서식 코드는 인코딩 시 토큰으로 보존).
     """
     def has_jp(bs):
         return any(0x81 <= bs[i] <= 0x9f or 0xe0 <= bs[i] <= 0xfc for i in range(len(bs) - 1))
@@ -31,7 +55,7 @@ def enum_unique(ui):
     for j in range(len(ui)):
         if ui[j] == 0:
             s = bytes(ui[start:j])
-            if len(s) >= 2 and scen._looks_text(s) and has_jp(s):
+            if len(s) >= 2 and has_jp(s) and (scen._looks_text(s) or _jp_char_count(s) >= 3):
                 strings.append((start, s))
             start = j + 1
     uniq = OrderedDict()
