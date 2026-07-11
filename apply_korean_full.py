@@ -72,6 +72,8 @@ def main():
     cards_ko = json.load(open(cards_path, encoding="utf-8")) if os.path.exists(cards_path) else {}
     block_path = os.path.join(_HERE, "block_ko.json")
     block_ko = json.load(open(block_path, encoding="utf-8")) if os.path.exists(block_path) else {}
+    missed_path = os.path.join(_HERE, "missed_ko.json")
+    missed_ko = json.load(open(missed_path, encoding="utf-8")) if os.path.exists(missed_path) else {}
     d = datmod.Dat(open(args.infile, "rb").read())
     cmap = fontmod.parse_cmap(huffman.decompress(d.entry(FONT_ENTRY)))
 
@@ -80,6 +82,7 @@ def main():
     used |= {c for t in list(UI_KO.values()) + list(SETUP_KO.values()) for c in t if is_h(c)}
     used |= {c for v in cards_ko.values() for c in v if is_h(c)}
     used |= {c for evs in block_ko.values() for pages in evs.values() for p in pages for c in p if is_h(c)}
+    used |= {c for mm in missed_ko.values() for pages in mm.values() for p in pages for c in p if is_h(c)}
     extra = [c for c in sorted(used) if c not in set(wansung.WANSUNG_2350)]
     syll2code = wansung.build_fixed_map(cmap, extra=extra)
     print("한글 %d자(완성형 2350%s) 폰트 주입" % (len(syll2code), (" + %d" % len(extra)) if extra else ""))
@@ -117,6 +120,36 @@ def main():
         enc = cardtext.encode("".join(s), tokens, syll2code)
         return enc if len(enc) <= budget else trunc(enc, budget)
 
+    def apply_missed(dec, mm):
+        """find_text_region 이 놓친 중간 텍스트 세그먼트를 오프셋 기준 제자리 교체.
+        각 세그먼트를 페이지(0x07) 단위로 원문 바이트 길이 이하 교체(0x20 패딩)해
+        모든 페이지 오프셋을 보존한다. mm = {offset(str): [korean_page, ...]}."""
+        if not mm:
+            return dec
+        dec = bytearray(dec)
+        for off_str, pages in mm.items():
+            off = int(off_str)
+            end = dec.find(b"\x00", off)
+            if end < 0:
+                continue
+            seg = bytes(dec[off:end])
+            opages = seg.split(b"\x07")
+            newseg = bytearray()
+            for pi, opage in enumerate(opages):
+                if pi < len(pages) and pages[pi] != "":
+                    _, tokens = cardtext.tokenize(opage)
+                    enc = fit_page(pages[pi], tokens, len(opage))
+                    newseg += enc + bytes([PAD]) * (len(opage) - len(enc))
+                else:
+                    newseg += opage
+                if pi < len(opages) - 1:
+                    newseg += b"\x07"
+            if len(newseg) < len(seg):
+                newseg += bytes([PAD]) * (len(seg) - len(newseg))
+            if len(newseg) == len(seg):
+                dec[off:end] = newseg
+        return bytes(dec)
+
     # 폰트 주입 — 4bpp(대사·카드 패널) + 1bpp(소형 UI/HUD·스톡정보·카드상세 헤더) 모든 섹션
     fontbuf = bytearray(huffman.decompress(d.entry(FONT_ENTRY)))
     sizes = fontmod.find_all_sections(fontbuf)
@@ -147,29 +180,34 @@ def main():
                 dec = huffman.decompress(ent[off:off+ln])
             except Exception:
                 continue
-            ts, events = scen.find_text_region(dec)
-            if ts is None:
+            ts, events = scen.find_text_region(dec)          # 끝 영역(원본 기준) 확정
+            mm = missed_ko.get(f"{idx}.s{k}", {})
+            if ts is None and not mm:
                 continue
-            evmap = ko.get(f"e{idx}_s{k}", {})
-            region = bytearray()
-            for ei, ev in enumerate(events):
-                opages = ev.split(b"\x07")
-                kp = evmap.get(str(ei))
-                for pi, opage in enumerate(opages):
-                    if kp is not None and pi < len(kp) and kp[pi] != "":
-                        enc = encp(kp[pi])
-                        if len(enc) > len(opage):
-                            enc = trunc(enc, len(opage))
-                        region += enc + bytes([PAD]) * (len(opage) - len(enc))
-                    else:
-                        region += opage
-                    if pi < len(opages) - 1:
-                        region += b"\x07"
-                region += b"\x00"
-                n_ev += 1
-            if len(region) != len(dec) - ts:
-                continue                      # 길이 불일치 섹션은 건너뜀(안전)
-            new_dec = dec[:ts] + bytes(region)
+            dec = apply_missed(dec, mm)                       # 놓친 중간 세그먼트 제자리 교체(끝 영역 유무 무관)
+            new_dec = dec                                     # 기본값: missed 만 반영
+            if ts is not None:
+                evmap = ko.get(f"e{idx}_s{k}", {})
+                region = bytearray()
+                for ei, ev in enumerate(events):
+                    opages = ev.split(b"\x07")
+                    kp = evmap.get(str(ei))
+                    for pi, opage in enumerate(opages):
+                        if kp is not None and pi < len(kp) and kp[pi] != "":
+                            enc = encp(kp[pi])
+                            if len(enc) > len(opage):
+                                enc = trunc(enc, len(opage))
+                            region += enc + bytes([PAD]) * (len(opage) - len(enc))
+                        else:
+                            region += opage
+                        if pi < len(opages) - 1:
+                            region += b"\x07"
+                    region += b"\x00"
+                    n_ev += 1
+                if len(region) == len(dec) - ts:             # 끝 영역 재조립이 유효하면 결합
+                    new_dec = dec[:ts] + bytes(region)
+            if new_dec == huffman.decompress(ent[off:off+ln]):
+                continue                                      # 변경 없음 → 건너뜀
             new_sec = huffman.compress(new_dec, typ=ent[off])
             assert huffman.decompress(new_sec) == new_dec
             cont = scen.rebuild_container(cont, k, new_sec)
@@ -230,6 +268,7 @@ def main():
         ts, events = scen.find_text_region(dec)
         if ts is None:
             continue
+        dec = apply_missed(dec, missed_ko.get(str(idx), {}))   # 놓친 중간 세그먼트(예: 1849 튜토리얼)
         region = bytearray()
         for ei, ev in enumerate(events):
             opages = ev.split(b"\x07")
