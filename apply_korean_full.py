@@ -190,6 +190,22 @@ def main():
         secs = scen.parse_sections(ent)
         if not secs:
             continue
+        # 비압축(raw) 섹션의 미번역(예: 1947.s2 퀘스트 제목·노드명) — 제자리 교체(null 패딩)
+        ent = bytearray(ent)
+        for k, (off, ln) in enumerate(secs):
+            mm = missed_ko.get(f"{idx}.r{k}", {})
+            if not mm or not ln or off >= len(ent) or ent[off] in (0x08, 0x0c, 0x0d, 0x8d):
+                continue
+            for off_s, pages in mm.items():
+                so = off + int(off_s)
+                end = ent.find(b"\x00", so, off + ln)
+                if end < 0:
+                    continue
+                bud = end - so
+                _, tokens = cardtext.tokenize(bytes(ent[so:end]))
+                enc = fit_page(pages[0], tokens, bud)
+                ent[so:end] = enc + b"\x00" * (bud - len(enc))
+        ent = bytes(ent)
         cont = ent
         for k, (off, ln) in enumerate(secs):
             if not ln or ent[off] not in (0x08, 0x0c):
